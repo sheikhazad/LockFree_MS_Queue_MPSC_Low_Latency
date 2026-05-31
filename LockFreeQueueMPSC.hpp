@@ -19,7 +19,7 @@ private:
         std::atomic<Node*> next;
 
         explicit Node(T const& value) : data(value), next(nullptr) {}
-        Node() : next(nullptr) {}
+        Node() : next(nullptr) {} //For dummy node
     };
 
     alignas(CACHE_LINE_SIZE) std::atomic<Node*> head;
