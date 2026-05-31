@@ -58,14 +58,19 @@ public:
             if (old_tail_next == nullptr) {
                 // 3. CAS to link new node at end of the list
                 //    Publish new_node by linking it into old_tail->next
+                // This publishes: the new node, the node’s data, all prior writes to that node
+                // This is the ONLY real publish point
                 if (old_tail->next.compare_exchange_weak(old_tail_next, new_node,
                         std::memory_order_release, // Publish new_node by linking it into the queue.
                                                    // Consumers can reach new_node only after this release CAS succeeds.
                         std::memory_order_relaxed)) // failure = retry
                 {
-                    //4. Try to swing tail to the new node (not mandatory but improves progress, so relax is enough)
+                    //4. Try to swing tail to the new node (not mandatory but improves progress)
                     // Advance tail (optimization; not part of correctness)
-                    //compare_exchange_weak may fail spuriously and need looping, so use compare_exchange_strong for simplicity here
+                    // CAS may fail spuriously, so strong CAS is used for simplicity
+                    // This update is only a performance hint; correctness is unaffected
+                    // because enqueue correctness is guaranteed by old_tail->next CAS (release) above
+                    //This publishes: only a pointer value (tail update), NOT the node, NOT data, NOT ordering needed for correctness
                     tail.compare_exchange_strong(old_tail, new_node,
                         std::memory_order_relaxed, 
                         std::memory_order_relaxed); 
@@ -111,6 +116,11 @@ public:
         out = std::move(old_head_next->data); //for complex T
 
         // move head forward (single consumer → safe without CAS)
+        // We do not need memory_order_release because head is not used for inter-thread synchronization.
+        // All visibility guarantees are already provided by:
+        // producer: release on old_tail->next CAS
+        // consumer: acquire on old_head->next load
+        // head is only a single-consumer cursor and does not participate in the happens-before chain.
         head.store(old_head_next, std::memory_order_relaxed);
 
         //Without hazard pointers, epoch reclamation, RCU, etc., this queue leaks memory.
